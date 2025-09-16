@@ -1,0 +1,106 @@
+// server.js — E-commerce Catalog with Nested Documents (Node + Express + MongoDB)
+const express = require('express');
+const mongoose = require('mongoose');
+const bodyParser = require('body-parser');
+
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/ecommerce_catalog';
+const PORT = process.env.PORT || 4000;
+
+const app = express();
+app.use(bodyParser.json());
+
+// --- Mongoose Schema ---
+const variantSchema = new mongoose.Schema({
+  sku: String,
+  color: String,
+  size: String,
+  storage: String,
+  price: Number,
+  stock: Number
+}, { _id: false });
+
+const productSchema = new mongoose.Schema({
+  productId: { type: mongoose.Schema.Types.ObjectId, default: () => new mongoose.Types.ObjectId() },
+  name: String,
+  brand: String,
+  price: Number,
+  stock: Number,
+  attributes: Object,
+  variants: [variantSchema]
+}, { _id: false });
+
+const catalogSchema = new mongoose.Schema({
+  categoryName: { type: String, required: true, unique: true },
+  description: String,
+  products: [productSchema]
+});
+
+const Catalog = mongoose.model('Catalog', catalogSchema);
+
+// --- Routes ---
+// create category
+app.post('/categories', async (req, res) => {
+  try {
+    const cat = await Catalog.create(req.body);
+    res.json(cat);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// list categories
+app.get('/categories', async (req, res) => {
+  const cats = await Catalog.find();
+  res.json(cats);
+});
+
+// add product to category
+app.post('/categories/:cat/products', async (req, res) => {
+  try {
+    const updated = await Catalog.findOneAndUpdate(
+      { categoryName: req.params.cat },
+      { $push: { products: req.body } },
+      { new: true }
+    );
+    res.json(updated);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// add variant to a product
+app.post('/categories/:cat/products/:pid/variants', async (req, res) => {
+  try {
+    const cat = await Catalog.findOne({ categoryName: req.params.cat });
+    if (!cat) return res.status(404).json({ error: 'Category not found' });
+    const product = cat.products.id(req.params.pid) || cat.products.find(p => p.productId.toString() === req.params.pid);
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+    product.variants.push(req.body);
+    await cat.save();
+    res.json(product);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// find product by SKU
+app.get('/variants/:sku', async (req, res) => {
+  try {
+    const cat = await Catalog.findOne({ "products.variants.sku": req.params.sku }, { "products.$": 1 });
+    if (!cat) return res.status(404).json({ error: 'Variant not found' });
+    res.json(cat.products[0]);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// --- connect & start ---
+mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => {
+    console.log('Connected to MongoDB');
+    app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+  })
+  .catch(err => {
+    console.error('DB connection error:', err);
+    process.exit(1);
+  });
