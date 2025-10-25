@@ -1,0 +1,116 @@
+import React, { useState, createContext, useContext } from "react";
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+
+// --- Auth Context with Roles ---
+const AuthContext = createContext();
+const useAuth = () => useContext(AuthContext);
+
+const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(() => {
+    const saved = localStorage.getItem("user");
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  const login = (username, role) => {
+    const userData = { username, role };
+    localStorage.setItem("user", JSON.stringify(userData));
+    setUser(userData);
+  };
+
+  const logout = () => {
+    localStorage.removeItem("user");
+    setUser(null);
+  };
+
+  const isAuthenticated = !!user;
+
+  return (
+    <AuthContext.Provider value={{ user, login, logout, isAuthenticated }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+// --- Protected Route with Role Check ---
+const ProtectedRoute = ({ children, allowedRoles }) => {
+  const { isAuthenticated, user } = useAuth();
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (allowedRoles && !allowedRoles.includes(user.role)) return <Navigate to="/unauthorized" replace />;
+  return children;
+};
+
+// --- Login Form ---
+const LoginForm = () => {
+  const [username, setUsername] = useState("");
+  const [role, setRole] = useState("User");
+  const [error, setError] = useState("");
+  const { login } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setError("");
+    if (!username) {
+      setError("Enter username");
+      return;
+    }
+    login(username, role);
+    navigate("/dashboard");
+  };
+
+  return (
+    <div style={{ maxWidth: "400px", margin: "auto" }}>
+      <h2>Login</h2>
+      {error && <p style={{ color: "red" }}>{error}</p>}
+      <form onSubmit={handleSubmit}>
+        <div style={{ marginBottom: "1rem" }}>
+          <label>Username:</label>
+          <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} style={{ width: "100%", padding: "0.5rem" }} />
+        </div>
+        <div style={{ marginBottom: "1rem" }}>
+          <label>Role:</label>
+          <select value={role} onChange={(e) => setRole(e.target.value)} style={{ width: "100%", padding: "0.5rem" }}>
+            <option>User</option>
+            <option>Moderator</option>
+            <option>Admin</option>
+          </select>
+        </div>
+        <button type="submit" style={{ padding: "0.5rem 1rem" }}>Login</button>
+      </form>
+    </div>
+  );
+};
+
+// --- Pages ---
+const Dashboard = () => {
+  const { user, logout } = useAuth();
+  return (
+    <div style={{ maxWidth: "400px", margin: "auto" }}>
+      <h2>Dashboard</h2>
+      <p>Welcome, {user.username}! Your role: {user.role}</p>
+      <button onClick={logout} style={{ padding: "0.5rem 1rem" }}>Logout</button>
+    </div>
+  );
+};
+
+const AdminPage = () => <h2>Admin Page - Only for Admins</h2>;
+const ModeratorPage = () => <h2>Moderator Page - Only for Moderators</h2>;
+const Unauthorized = () => <h2>Unauthorized - Access Denied</h2>;
+
+// --- App Component ---
+export default function App() {
+  return (
+    <AuthProvider>
+      <Router>
+        <Routes>
+          <Route path="/login" element={<LoginForm />} />
+          <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/admin" element={<ProtectedRoute allowedRoles={["Admin"]}><AdminPage /></ProtectedRoute>} />
+          <Route path="/moderator" element={<ProtectedRoute allowedRoles={["Moderator"]}><ModeratorPage /></ProtectedRoute>} />
+          <Route path="/unauthorized" element={<Unauthorized />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </Router>
+    </AuthProvider>
+  );
+}
