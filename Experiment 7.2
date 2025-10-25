@@ -1,0 +1,67 @@
+const express = require("express");
+const jwt = require("jsonwebtoken");
+const bcrypt = require("bcrypt");
+const app = express();
+app.use(express.json());
+
+// --- Secret Key for JWT ---
+const JWT_SECRET = "supersecretkey";
+
+// --- Mock Users Database ---
+const users = [
+  { id: 1, username: "admin", password: "$2b$10$X0w3b7/zrKZPIQG1iyx1cOoO4bGH1TllCk2rz7B.6f2UBQXJdPtuK", role: "Admin" }, // password: admin123
+  { id: 2, username: "user", password: "$2b$10$NwZGZ6o6YGy7hL1t0nq0M.Xx6Q6jPLS6y6j7h5g8W5mTnOJYmK0Cm", role: "User" },   // password: user123
+];
+
+// --- Middleware: Authenticate JWT ---
+const authenticateJWT = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ message: "Missing or invalid token" });
+  }
+  const token = authHeader.split(" ")[1];
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (err) {
+    return res.status(403).json({ message: "Invalid token" });
+  }
+};
+
+// --- Middleware: Authorize Roles ---
+const authorizeRoles = (...roles) => {
+  return (req, res, next) => {
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({ message: "Access denied: insufficient role" });
+    }
+    next();
+  };
+};
+
+// --- Login Route ---
+app.post("/login", async (req, res) => {
+  const { username, password } = req.body;
+  const user = users.find(u => u.username === username);
+  if (!user) return res.status(401).json({ message: "Invalid credentials" });
+
+  const valid = await bcrypt.compare(password, user.password);
+  if (!valid) return res.status(401).json({ message: "Invalid credentials" });
+
+  const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: "1h" });
+  res.json({ token });
+});
+
+// --- Protected Banking Routes ---
+app.get("/balance", authenticateJWT, authorizeRoles("User", "Admin"), (req, res) => {
+  res.json({ message: `Hello ${req.user.username}, your balance is $10,000` });
+});
+
+app.get("/admin-dashboard", authenticateJWT, authorizeRoles("Admin"), (req, res) => {
+  res.json({ message: `Welcome Admin ${req.user.username}, you have full access` });
+});
+
+// --- Start Server ---
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
