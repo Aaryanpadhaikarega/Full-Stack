@@ -1,0 +1,104 @@
+import React, { useState, createContext, useContext } from "react";
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+
+// --- Auth Context ---
+const AuthContext = createContext();
+const useAuth = () => useContext(AuthContext);
+
+const AuthProvider = ({ children }) => {
+  const [token, setToken] = useState(localStorage.getItem("token") || null);
+
+  const login = (jwtToken) => {
+    localStorage.setItem("token", jwtToken);
+    setToken(jwtToken);
+  };
+
+  const logout = () => {
+    localStorage.removeItem("token");
+    setToken(null);
+  };
+
+  const isAuthenticated = !!token;
+
+  return (
+    <AuthContext.Provider value={{ token, login, logout, isAuthenticated }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+// --- Protected Route ---
+const ProtectedRoute = ({ children }) => {
+  const { isAuthenticated } = useAuth();
+  return isAuthenticated ? children : <Navigate to="/login" replace />;
+};
+
+// --- Login Form ---
+const LoginForm = () => {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const { login } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setError("");
+    if (!email || !password) {
+      setError("Enter email and password.");
+      return;
+    }
+    // Mock JWT for demonstration
+    const fakeJWT = "demo.jwt.token";
+    login(fakeJWT);
+    navigate("/dashboard");
+  };
+
+  return (
+    <div style={{ maxWidth: "400px", margin: "auto" }}>
+      <h2>Login</h2>
+      {error && <p style={{ color: "red" }}>{error}</p>}
+      <form onSubmit={handleSubmit}>
+        <div style={{ marginBottom: "1rem" }}>
+          <label>Email:</label>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ width: "100%", padding: "0.5rem" }} />
+        </div>
+        <div style={{ marginBottom: "1rem" }}>
+          <label>Password:</label>
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} style={{ width: "100%", padding: "0.5rem" }} />
+        </div>
+        <button type="submit" style={{ padding: "0.5rem 1rem" }}>Login</button>
+      </form>
+    </div>
+  );
+};
+
+// --- Protected Dashboard ---
+const Dashboard = () => {
+  const { logout } = useAuth();
+  return (
+    <div style={{ maxWidth: "400px", margin: "auto" }}>
+      <h2>Dashboard (Protected)</h2>
+      <button onClick={logout} style={{ padding: "0.5rem 1rem" }}>Logout</button>
+    </div>
+  );
+};
+
+// --- App Component ---
+export default function App() {
+  return (
+    <AuthProvider>
+      <Router>
+        <Routes>
+          <Route path="/login" element={<LoginForm />} />
+          <Route path="/dashboard" element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </Router>
+    </AuthProvider>
+  );
+}
