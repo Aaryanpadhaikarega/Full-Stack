@@ -1,0 +1,74 @@
+const express = require("express");
+const jwt = require("jsonwebtoken");
+const bcrypt = require("bcrypt");
+const app = express();
+app.use(express.json());
+
+const JWT_SECRET = "supersecretkey";
+
+// --- Mock Users Database ---
+let users = [
+  { id: 1, username: "alice", password: "$2b$10$X0w3b7/zrKZPIQG1iyx1cOoO4bGH1TllCk2rz7B.6f2UBQXJdPtuK", balance: 5000 }, // password: alice123
+  { id: 2, username: "bob", password: "$2b$10$NwZGZ6o6YGy7hL1t0nq0M.Xx6Q6jPLS6y6j7h5g8W5mTnOJYmK0Cm", balance: 3000 },   // password: bob123
+];
+
+// --- Middleware: Authenticate JWT ---
+const authenticateJWT = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ message: "Missing or invalid token" });
+  }
+  const token = authHeader.split(" ")[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch {
+    return res.status(403).json({ message: "Invalid token" });
+  }
+};
+
+// --- Login Route ---
+app.post("/login", async (req, res) => {
+  const { username, password } = req.body;
+  const user = users.find(u => u.username === username);
+  if (!user) return res.status(401).json({ message: "Invalid credentials" });
+
+  const valid = await bcrypt.compare(password, user.password);
+  if (!valid) return res.status(401).json({ message: "Invalid credentials" });
+
+  const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: "1h" });
+  res.json({ token });
+});
+
+// --- Get Balance ---
+app.get("/balance", authenticateJWT, (req, res) => {
+  const user = users.find(u => u.id === req.user.id);
+  res.json({ username: user.username, balance: user.balance });
+});
+
+// --- Transfer Money ---
+app.post("/transfer", authenticateJWT, (req, res) => {
+  const { toUsername, amount } = req.body;
+  if (!toUsername || !amount || amount <= 0) {
+    return res.status(400).json({ message: "Invalid request" });
+  }
+
+  const fromUser = users.find(u => u.id === req.user.id);
+  const toUser = users.find(u => u.username === toUsername);
+
+  if (!toUser) return res.status(404).json({ message: "Recipient not found" });
+  if (fromUser.balance < amount) return res.status(400).json({ message: "Insufficient balance" });
+
+  fromUser.balance -= amount;
+  toUser.balance += amount;
+
+  res.json({
+    message: `Transferred $${amount} to ${toUser.username}`,
+    balance: fromUser.balance
+  });
+});
+
+// --- Start Server ---
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
